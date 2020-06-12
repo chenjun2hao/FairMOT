@@ -34,7 +34,7 @@ class BaseTrack(object):
     @staticmethod
     def next_id():
         BaseTrack._count += 1
-        return BaseTrack._count
+        return BaseTrack._count         # 是基类的_count + 1
 
     def activate(self, *args):
         raise NotImplementedError

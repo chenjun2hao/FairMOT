@@ -287,27 +287,23 @@ class JDETracker(object):
 
         ''' Step 2: First association, with embedding'''
         strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
-        # Predict the current location with KF
-        #for strack in strack_pool:
-            #strack.predict()
-        STrack.multi_predict(strack_pool)
-        dists = matching.embedding_distance(strack_pool, detections)
-        #dists = matching.gate_cost_matrix(self.kalman_filter, dists, strack_pool, detections)
-        dists = matching.fuse_motion(self.kalman_filter, dists, strack_pool, detections)
-        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.7)
+        dists = matching.embedding_distance(strack_pool, detections)    # 计算新检测出来的目标和tracked_tracker之间的cosine距离
+        STrack.multi_predict(strack_pool)  # 卡尔曼预测
+        dists = matching.fuse_motion(self.kalman_filter, dists, strack_pool, detections)        # 利用卡尔曼计算detection和pool_stacker直接的距离代价
+        matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.7)           # 匈牙利匹配 // 将跟踪框和检测框进行匹配 // u_track是未匹配的tracker的索引，
 
-        for itracked, idet in matches:
+        for itracked, idet in matches:      # matches:63*2 , 63:detections的维度，2：第一列为tracked_tracker索引，第二列为detection的索引
             track = strack_pool[itracked]
             det = detections[idet]
             if track.state == TrackState.Tracked:
-                track.update(detections[idet], self.frame_id)
+                track.update(det, self.frame_id)       # 匹配的pool_tracker和detection，更新特征和卡尔曼状态
                 activated_starcks.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id, new_id=False)     # 如果是在lost中的，就重新激活
                 refind_stracks.append(track)
 
-        ''' Step 3: Second association, with IOU'''
-        detections = [detections[i] for i in u_detection]
+        ''' Step 3: Second association, with IOU''' """ 在余弦距离未匹配的detection和tracker重新用iou进行匹配 """
+        detections = [detections[i] for i in u_detection]           # u_detection是未匹配的detection的索引
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
         dists = matching.iou_distance(r_tracked_stracks, detections)
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
@@ -319,17 +315,18 @@ class JDETracker(object):
                 track.update(det, self.frame_id)
                 activated_starcks.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id, new_id=False)         # 前面已经限定了是TrackState.Tracked，这里是不用运行到的。
                 refind_stracks.append(track)
 
         for it in u_track:
             track = r_tracked_stracks[it]
             if not track.state == TrackState.Lost:
                 track.mark_lost()
-                lost_stracks.append(track)
+                lost_stracks.append(track)      # 将和tracked_tracker iou未匹配的tracker的状态改为lost
 
+        temp = 1
         '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
-        detections = [detections[i] for i in u_detection]
+        detections = [detections[i] for i in u_detection]       # 将cosine/iou未匹配的detection和unconfirmed_tracker进行匹配
         dists = matching.iou_distance(unconfirmed, detections)
         matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
@@ -341,23 +338,24 @@ class JDETracker(object):
             removed_stracks.append(track)
 
         """ Step 4: Init new stracks"""
-        for inew in u_detection:
+        for inew in u_detection:            # 对cosine/iou/uncofirmed_tracker都未匹配的detection重新初始化一个unconfimed_tracker
             track = detections[inew]
             if track.score < self.det_thresh:
                 continue
-            track.activate(self.kalman_filter, self.frame_id)
+            track.activate(self.kalman_filter, self.frame_id)       # 激活track，第一帧的activated=T，其他为False
             activated_starcks.append(track)
+
         """ Step 5: Update state"""
         for track in self.lost_stracks:
-            if self.frame_id - track.end_frame > self.max_time_lost:
+            if self.frame_id - track.end_frame > self.max_time_lost:        # 消失15帧之后
                 track.mark_removed()
                 removed_stracks.append(track)
 
         # print('Ramained match {} s'.format(t4-t3))
 
-        self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]
-        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_starcks)
-        self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
+        self.tracked_stracks = [t for t in self.tracked_stracks if t.state == TrackState.Tracked]       # 筛出tracked状态的tracker
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_starcks)                   # 向self.tracked_stacks中添加新的detection
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)          # 重新匹配出的trackers
         self.lost_stracks = sub_stracks(self.lost_stracks, self.tracked_stracks)
         self.lost_stracks.extend(lost_stracks)
         self.lost_stracks = sub_stracks(self.lost_stracks, self.removed_stracks)

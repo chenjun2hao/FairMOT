@@ -137,7 +137,6 @@ class KalmanFilter(object):
         (ndarray, ndarray)
             Returns the projected mean and covariance matrix of the given state
             estimate.
-
         """
         std = [
             self._std_weight_position * mean[3],
@@ -146,13 +145,14 @@ class KalmanFilter(object):
             self._std_weight_position * mean[3]]
         innovation_cov = np.diag(np.square(std))
 
-        mean = np.dot(self._update_mat, mean)
+        mean = np.dot(self._update_mat, mean)       # 公式(3) Hx'
         covariance = np.linalg.multi_dot((
-            self._update_mat, covariance, self._update_mat.T))
+            self._update_mat, covariance, self._update_mat.T))      # 公式(4) HP'H(T)
         return mean, covariance + innovation_cov
 
     def multi_predict(self, mean, covariance):
         """Run Kalman filter prediction step (Vectorized version).
+        卡尔曼滤波预测步骤
         Parameters
         ----------
         mean : ndarray
@@ -179,14 +179,15 @@ class KalmanFilter(object):
             self._std_weight_velocity * mean[:, 3]]
         sqr = np.square(np.r_[std_pos, std_vel]).T
 
+        # 初始化噪声矩阵Q
         motion_cov = []
         for i in range(len(mean)):
             motion_cov.append(np.diag(sqr[i]))
         motion_cov = np.asarray(motion_cov)
 
-        mean = np.dot(mean, self._motion_mat.T)
+        mean = np.dot(mean, self._motion_mat.T)         # x' = Fx, F为状态转移矩阵 // 得到t时刻的均值
         left = np.dot(self._motion_mat, covariance).transpose((1, 0, 2))
-        covariance = np.dot(left, self._motion_mat.T) + motion_cov
+        covariance = np.dot(left, self._motion_mat.T) + motion_cov      # p' = FPF(T) + Q // 得到t时刻的协方差
 
         return mean, covariance
 
@@ -210,17 +211,25 @@ class KalmanFilter(object):
             Returns the measurement-corrected state distribution.
 
         """
-        projected_mean, projected_cov = self.project(mean, covariance)
+        """
+        卡尔曼滤波更新操作
+        y = z - Hx'       (3)
+        S = HP'H(T) + R   (4)
+        K = P'H(T)S(-1)   (5)
+        x = x' + Ky       (6)
+        P = (I - KH)P'    (7)
+        """
+        projected_mean, projected_cov = self.project(mean, covariance)      # 公式(3),(4)
 
         chol_factor, lower = scipy.linalg.cho_factor(
             projected_cov, lower=True, check_finite=False)
         kalman_gain = scipy.linalg.cho_solve(
             (chol_factor, lower), np.dot(covariance, self._update_mat.T).T,
             check_finite=False).T
-        innovation = measurement - projected_mean
+        innovation = measurement - projected_mean       # 公式(3) z - Hx‘
 
-        new_mean = mean + np.dot(innovation, kalman_gain.T)
-        new_covariance = covariance - np.linalg.multi_dot((
+        new_mean = mean + np.dot(innovation, kalman_gain.T)     # 公式(6) x' + Ky
+        new_covariance = covariance - np.linalg.multi_dot((     # 公式(7) (I - KH)P'
             kalman_gain, projected_cov, kalman_gain.T))
         return new_mean, new_covariance
 

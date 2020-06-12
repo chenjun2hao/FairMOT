@@ -39,7 +39,7 @@ class Logger(object):
           
     log_dir = opt.save_dir + '/logs_{}'.format(time_str)
     if USE_TENSORBOARD:
-      self.writer = tensorboardX.SummaryWriter(log_dir=log_dir)
+      self.writer = tensorboardX.SummaryWriter(logdir=log_dir)
     else:
       if not os.path.exists(os.path.dirname(log_dir)):
         os.mkdir(os.path.dirname(log_dir))

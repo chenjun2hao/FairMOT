@@ -382,7 +382,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
                     img_max = np.max(lb[:, 1])
                 if img_max > max_index:
                     max_index = img_max
-            self.tid_num[ds] = max_index + 1
+            self.tid_num[ds] = max_index + 1        # 多数据集，求tid_num，也就是reid的最大类别
 
         last_index = 0
         for i, (k, v) in enumerate(self.tid_num.items()):
@@ -420,7 +420,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
         imgs, labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
         for i, _ in enumerate(labels):
             if labels[i, 1] > -1:
-                labels[i, 1] += self.tid_start_index[ds]
+                labels[i, 1] += self.tid_start_index[ds]        # 多数据集，处理reid的index
 
         output_h = imgs.shape[1] // self.opt.down_ratio
         output_w = imgs.shape[2] // self.opt.down_ratio
